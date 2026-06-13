@@ -280,17 +280,7 @@ This feature does not introduce new API endpoints and operates entirely within t
 
 ### Upgrade / Downgrade Strategy
 
-**Upgrade test scenario:**
-
-1. Start kube-scheduler v1.36 (feature does not exist).
-2. Create 3 nodes across 3 zones, deploy 3 pods with `minDomains: 3, maxSkew: 1, nodeTaintsPolicy: Honor`.
-3. Taint all nodes in zone C. Attempt to schedule additional pod — stuck Pending.
-4. Upgrade kube-scheduler to v1.37 with feature gate enabled.
-5. The pending pod schedules to zone A or B (tainted zone C satisfies minDomains but is excluded from skew).
-6. Downgrade kube-scheduler back to v1.36.
-7. Additional pods are again stuck Pending (original behavior restored).
-
-**No API changes:** There are no new fields. Existing `nodeTaintsPolicy: Honor` semantics are extended. Downgrade reverts to the current (stricter) behavior, which may cause some pods to become unschedulable but does not corrupt state.
+**No API changes:** There are no new fields. Existing `nodeTaintsPolicy: Honor` semantics are extended. Downgrade reverts to the current (stricter) behavior, which may cause some pods to become unschedulable but does not corrupt state. The upgrade/downgrade path is functionally equivalent to feature enablement/disablement and is covered by the same tests.
 
 ### Version Skew Strategy
 
@@ -308,7 +298,7 @@ This change is entirely within kube-scheduler. There is no version skew concern 
 
 ###### Does enabling the feature change any default behavior?
 
-No. The behavior only changes when a pod's TSC has `nodeTaintsPolicy: Honor` AND a topology domain is fully tainted AND that domain has existing matching pods. Users who don't use `nodeTaintsPolicy: Honor` or who don't experience full domain outages see no change.
+Yes, but only to correct existing broken behavior. When a pod's TSC has `nodeTaintsPolicy: Honor` AND a topology domain is fully tainted AND that domain has existing matching pods, the scheduler will now correctly allow scheduling to healthy domains rather than blocking all new pods. Users who don't use `nodeTaintsPolicy: Honor` or who don't experience full domain outages see no change.
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
@@ -354,12 +344,11 @@ No.
 ###### How can someone using this feature know that it is working for their instance?
 
 - Pods that would previously be stuck Pending during a zone outage now schedule to healthy zones.
-- `schedule_attempts_total{result="scheduled"}` increases during zone outage events.
+- `schedule_attempts_total{result="unschedulable"}` decreases for affected workloads during zone outage events.
 
 ###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
 
-- `plugin_execution_duration_seconds{plugin="PodTopologySpread"}` ≤ 100ms at p99.
-- No increase in `schedule_attempts_total{result="unschedulable"}` for workloads using this feature during zone outages.
+This feature maintains existing SLOs. It does not introduce new latency-sensitive code paths or change the performance characteristics of the PodTopologySpread plugin.
 
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
@@ -429,8 +418,6 @@ No impact. The feature operates entirely within the scheduler's in-memory state 
 
 2. **Post-outage imbalance:** When nodes are un-tainted after an outage, pods remain in an imbalanced state. This is acceptable because the cluster naturally rebalances: future scheduling decisions will favor the previously-tainted domain until skew is restored.
 
-3. **Cloud provider dependency:** Requires that the cloud provider or cluster operator taints nodes during outages. EKS has this integration built-in. Other providers may need to implement similar health-detection tainting mechanisms (e.g., using `node.kubernetes.io/unreachable` which the node lifecycle controller already sets).
-
 ## Alternatives
 
 ### Alternative 1: New field `domainUnavailablePolicy`
@@ -444,6 +431,7 @@ Introduce a new enum field on TopologySpreadConstraint that explicitly controls 
 
 A mechanism for node autoscalers to signal kube-scheduler that capacity cannot be provisioned in a given domain. This is complementary but orthogonal:
 - It would address stockout scenarios (grey failures) that this KEP does not.
+- It would not cover the static case (all existing nodes tainted) that this KEP does cover.
 - It requires cross-component protocol design and is significantly more complex.
 - This KEP's approach works immediately with existing tainting infrastructure.
 
