@@ -298,7 +298,7 @@ This change is entirely within kube-scheduler. There is no version skew concern 
 
 ###### Does enabling the feature change any default behavior?
 
-Yes, but only to correct existing broken behavior. When a pod's TSC has `nodeTaintsPolicy: Honor` AND a topology domain is fully tainted AND that domain has existing matching pods, the scheduler will now correctly allow scheduling to healthy domains rather than blocking all new pods. Users who don't use `nodeTaintsPolicy: Honor` or who don't experience full domain outages see no change.
+Yes, but only to address a gap in scheduling semantics during full domain outages. When a pod's TSC has `nodeTaintsPolicy: Honor` AND a topology domain is fully tainted AND that domain has existing matching pods, the scheduler will now allow scheduling to healthy domains rather than blocking all new pods. Users who don't use `nodeTaintsPolicy: Honor` or who don't experience full domain outages see no change.
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
