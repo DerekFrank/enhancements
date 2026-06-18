@@ -173,27 +173,42 @@ Note: The existing `matchNodeInclusionPolicies` function evaluates both `NodeAff
 
 ```go
 // Pseudocode for the modified calPreFilterState
-for _, node := range allNodes {
-    if !matchNodeAffinityPolicy(node, pod) {
-        // Node excluded due to affinity - skip entirely (existing behavior)
+//
+// matchingPodsOnTaintedNodes tracks, per constraint, how many matching pods
+// exist on nodes excluded due to taints, grouped by topology domain.
+// Example: matchingPodsOnTaintedNodes[0]["us-east-1c"] = 3
+matchingPodsOnTaintedNodes := make([]map[string]int, numConstraints)
+
+for _, nodeInfo := range allNodes {
+    node := nodeInfo.Node()
+
+    if !nodeMatchesAffinityPolicy(node, pod, constraint) {
+        // Node excluded by NodeAffinityPolicy — skip entirely (existing behavior)
         continue
     }
-    if !matchNodeTaintsPolicy(node, pod) {
-        // Node excluded due to taints - track for domain-level analysis
-        tpVal := node.Labels[topologyKey]
-        taintedDomains[constraintIdx][tpVal] += countMatchingPods(node, selector)
+
+    if !nodeMatchesTaintsPolicy(node, pod, constraint) {
+        // Node is tainted and pod does not tolerate it — record its domain
+        // so we can determine later whether the entire domain is tainted.
+        domainValue := node.Labels[topologyKey]
+        matchingPodCount := countPodsMatchingSelector(nodeInfo, constraint.LabelSelector)
+        matchingPodsOnTaintedNodes[constraintIndex][domainValue] += matchingPodCount
         continue
     }
-    // ... existing logic: add to TpValueToMatchNum ...
+
+    // ... existing logic: add to TpValueToMatchNum (healthy domain tracking) ...
 }
 
-// Post-processing: identify fully-tainted domains with existing pods
-for constraintIdx, domains := range taintedDomains {
-    for tpVal, podCount := range domains {
-        if _, existsInHealthy := TpValueToMatchNum[constraintIdx][tpVal]; !existsInHealthy {
-            if podCount > 0 {
-                state.TaintedDomainCount[constraintIdx]++
-            }
+// Post-processing: a domain is "fully tainted" if it appears ONLY in the
+// tainted tracking map (no healthy node contributed it to TpValueToMatchNum).
+for constraintIndex, taintedDomainPodCounts := range matchingPodsOnTaintedNodes {
+    for domainValue, matchingPodCount := range taintedDomainPodCounts {
+        _, domainHasHealthyNodes := TpValueToMatchNum[constraintIndex][domainValue]
+        domainIsFullyTainted := !domainHasHealthyNodes
+        domainHasExistingPods := matchingPodCount > 0
+
+        if domainIsFullyTainted && domainHasExistingPods {
+            state.TaintedDomainCount[constraintIndex]++
         }
     }
 }
@@ -202,17 +217,18 @@ for constraintIdx, domains := range taintedDomains {
 **Modified `minMatchNum`:**
 
 ```go
-func (s *preFilterState) minMatchNum(constraintID int, minDomains int32) (int, error) {
-    paths := s.CriticalPaths[constraintID]
-    minMatchNum := paths[0].MatchNum
+func (s *preFilterState) minMatchNum(constraintIndex int, minDomains int32) (int, error) {
+    criticalPaths := s.CriticalPaths[constraintIndex]
+    globalMinimumMatchCount := criticalPaths[0].MatchNum
 
-    // Include tainted-but-populated domains in the domain count for minDomains
-    domainsNum := len(s.TpValueToMatchNum[constraintID]) + s.TaintedDomainCount[constraintID]
+    healthyDomainCount := len(s.TpValueToMatchNum[constraintIndex])
+    fullyTaintedDomainCount := s.TaintedDomainCount[constraintIndex]
+    totalEligibleDomains := healthyDomainCount + fullyTaintedDomainCount
 
-    if domainsNum < int(minDomains) {
-        minMatchNum = 0
+    if totalEligibleDomains < int(minDomains) {
+        globalMinimumMatchCount = 0
     }
-    return minMatchNum, nil
+    return globalMinimumMatchCount, nil
 }
 ```
 
