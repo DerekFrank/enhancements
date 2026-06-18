@@ -276,20 +276,20 @@ This feature does not introduce new API endpoints and operates entirely within t
 
 ### Graduation Criteria
 
-#### Alpha (v1.37)
+#### Alpha (v1.38)
 
 - [ ] Implementation behind `TaintedDomainExclusionInPodTopologySpread` feature gate.
 - [ ] Unit and integration tests as described in the Test Plan.
 - [ ] Documentation update for `minDomains` semantics.
 
-#### Beta (v1.38)
+#### Beta (v1.39)
 
 - [ ] Feature gate enabled by default.
 - [ ] Benchmark tests confirm no performance regression for workloads not using this feature.
 - [ ] E2E test simulating zone failure scenario.
 - [ ] Gather feedback from SIG Scheduling and SIG Autoscaling.
 
-#### GA (v1.39)
+#### GA (v1.40)
 
 - [ ] No negative feedback after at least one release with the feature enabled by default.
 - [ ] Confirmed interoperability with major node autoscalers (Karpenter, Cluster Autoscaler).

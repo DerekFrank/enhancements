@@ -17,11 +17,11 @@ see-also:
   - "/keps/sig-scheduling/3094-pod-topology-spread-considering-taints"
 replaces: []
 stage: alpha
-latest-milestone: "v1.37"
+latest-milestone: "v1.38"
 milestone:
-  alpha: "v1.37"
-  beta: "v1.38"
-  stable: "v1.39"
+  alpha: "v1.38"
+  beta: "v1.39"
+  stable: "v1.40"
 feature-gates:
   - name: TaintedDomainExclusionInPodTopologySpread
     components:
